@@ -1,0 +1,1451 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pelada Royale</title>
+
+<!--
+  PELADA ROYALE - roguelike de baralho com tema de futebol brasileiro
+  Visual de mesa de cartas: painel lateral à esquerda, coringas (técnicos) no
+  topo, jogada no centro, mão embaixo.
+
+  COMO JOGAR: clique duas vezes neste arquivo. Roda offline.
+  FOTOS: use  foto: fotoCommons("Arquivo.jpg")  na linha do jogador. Se a
+  imagem falhar, a carta volta sozinha para o retrato em SVG.
+
+  BALANCEAMENTO: BARALHO, COMBINACOES, RODADAS_DO_ANTE, CRESCIMENTO_ANTE,
+  TECNICOS, MELHORIAS — tudo no começo do script.
+-->
+
+<style>
+  :root {
+    color-scheme: dark;
+    --feltro: #2e6b4f;
+    --feltro-escuro: #1f4d39;
+    --painel: #3a4446;
+    --painel-escuro: #262e30;
+    --caixa: #1e2527;
+    --texto: #ffffff;
+    --texto-fraco: #b5c2c4;
+    --azul: #009dff;
+    --vermelho: #fe5f55;
+    --laranja: #fda200;
+    --ouro: #f5b143;
+    --verde: #4bc292;
+    --gol: #c58b1f;
+    --def: #2f6fd1;
+    --mei: #2fa66a;
+    --ata: #d33a48;
+    --pixel: "Press Start 2P", "Courier New", ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    color: var(--texto);
+    font: 14px/1.4 system-ui, -apple-system, Segoe UI, sans-serif;
+    background:
+      radial-gradient(ellipse at 30% 20%, rgba(255,255,255,.07), transparent 55%),
+      radial-gradient(ellipse at 80% 90%, rgba(0,0,0,.25), transparent 60%),
+      repeating-radial-gradient(circle at 60% 40%, rgba(255,255,255,.025) 0 18px, transparent 18px 40px),
+      var(--feltro);
+    padding: 12px;
+    padding-top: calc(12px + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mesa {
+    display: grid;
+    grid-template-columns: 250px 1fr;
+    gap: 14px;
+    max-width: 1100px;
+    margin: 0 auto;
+    min-height: calc(100vh - 24px);
+  }
+
+  /* ================= PAINEL LATERAL ================= */
+  .lateral {
+    background: var(--painel);
+    border-radius: 12px;
+    padding: 10px;
+    display: flex; flex-direction: column; gap: 8px;
+    box-shadow: inset 0 0 0 3px var(--painel-escuro), 0 6px 0 rgba(0,0,0,.3);
+  }
+
+  .logo {
+    font: 900 18px/1 var(--pixel);
+    text-align: center; letter-spacing: 1px;
+    color: var(--ouro); text-shadow: 2px 2px 0 #000;
+    padding: 6px 0 2px;
+  }
+  .recorde { text-align: center; font-size: 10px; color: var(--texto-fraco); min-height: 12px; }
+
+  .blind {
+    border-radius: 10px; overflow: hidden;
+    background: var(--painel-escuro);
+  }
+  .blind .titulo {
+    background: var(--laranja); color: #fff;
+    font: 800 15px/1.2 system-ui, sans-serif;
+    text-align: center; padding: 6px 8px;
+    text-shadow: 1px 1px 0 rgba(0,0,0,.4);
+  }
+  .blind.classico .titulo { background: var(--vermelho); }
+  .blind .corpo { display: flex; align-items: center; gap: 10px; padding: 8px; }
+  .ficha {
+    flex: 0 0 56px; height: 56px; border-radius: 50%;
+    background: var(--laranja);
+    box-shadow: inset 0 0 0 4px rgba(255,255,255,.35), 0 3px 0 rgba(0,0,0,.35);
+    display: grid; place-items: center;
+    font: 900 11px/1.05 var(--pixel); text-align: center; color: #fff;
+    text-shadow: 1px 1px 0 rgba(0,0,0,.4);
+  }
+  .blind.classico .ficha { background: var(--vermelho); }
+  .meta { flex: 1; background: var(--caixa); border-radius: 8px; padding: 6px 8px; text-align: center; }
+  .meta .rotulo { font-size: 10px; color: var(--texto-fraco); }
+  .meta .valor { font: 900 22px/1.1 system-ui, sans-serif; color: var(--vermelho); }
+  .meta .premio { font-size: 10px; color: var(--texto-fraco); }
+  .meta .premio b { color: var(--ouro); }
+  .regra { font-size: 11px; color: #ffd0cc; padding: 0 8px 8px; }
+  .regra:empty { display: none; }
+
+  .linha {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--painel-escuro); border-radius: 10px; padding: 6px 8px;
+  }
+  .linha .rotulo { font-size: 11px; font-weight: 700; color: var(--texto-fraco); width: 58px; line-height: 1.1; }
+  .linha .valor {
+    flex: 1; background: var(--caixa); border-radius: 8px; text-align: center;
+    font: 900 22px/1.4 system-ui, sans-serif;
+  }
+
+  .barra { height: 6px; background: var(--caixa); border-radius: 99px; overflow: hidden; }
+  .barra div { height: 100%; width: 0; background: var(--ouro); transition: width .35s ease; }
+
+  .maoInfo {
+    background: var(--painel-escuro); border-radius: 10px; padding: 8px;
+    text-align: center;
+  }
+  .maoInfo .combinacao { font: 800 17px/1.3 system-ui, sans-serif; min-height: 22px; }
+  .chipsMult { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .chipsMult .num {
+    flex: 1; border-radius: 8px; padding: 4px 6px;
+    font: 900 24px/1.2 system-ui, sans-serif;
+    box-shadow: 0 3px 0 rgba(0,0,0,.35);
+  }
+  .chipsMult .chips { background: var(--azul); text-align: right; }
+  .chipsMult .mult  { background: var(--vermelho); text-align: left; }
+  .chipsMult .vezes { font: 900 20px/1 system-ui, sans-serif; color: var(--vermelho); }
+  .maoInfo .conta { font-size: 12px; color: var(--texto-fraco); margin-top: 6px; min-height: 16px; }
+  .maoInfo .conta b { color: #fff; }
+
+  .grade { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .mini { background: var(--painel-escuro); border-radius: 10px; padding: 6px; text-align: center; }
+  .mini .rotulo { font-size: 10px; font-weight: 700; color: var(--texto-fraco); }
+  .mini .valor { background: var(--caixa); border-radius: 6px; font: 900 20px/1.4 system-ui, sans-serif; margin-top: 2px; }
+  .mini .valor.azul { color: var(--azul); }
+  .mini .valor.vermelho { color: var(--vermelho); }
+  .mini .valor.ouro { color: var(--ouro); }
+  .mini.largo { grid-column: span 2; }
+
+  /* ================= CAMPO ================= */
+  .campo { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+  .zona {
+    background: rgba(0,0,0,.18);
+    border-radius: 12px; padding: 8px;
+    position: relative;
+  }
+  .zona .contador {
+    position: absolute; right: 10px; bottom: 4px;
+    font-size: 11px; color: rgba(255,255,255,.6); font-weight: 700;
+  }
+
+  /* técnicos = coringas */
+  .banco { display: flex; flex-wrap: wrap; gap: 10px; min-height: 120px; align-items: center; padding-bottom: 14px; }
+  .tecnico {
+    width: 92px; min-height: 118px;
+    background: linear-gradient(160deg, #fff7e0, #f3e2b4);
+    color: #2a2112;
+    border: 3px solid var(--ouro);
+    border-radius: 9px; padding: 6px;
+    box-shadow: 0 5px 0 rgba(0,0,0,.35);
+    animation: balanco 3s ease-in-out infinite;
+    display: flex; flex-direction: column;
+  }
+  .tecnico:nth-child(2n) { animation-delay: -1.5s; }
+  .tecnico .icone { font-size: 26px; text-align: center; line-height: 1.2; }
+  .tecnico .nome { font: 800 11px/1.15 system-ui, sans-serif; text-align: center; margin: 2px 0 3px; }
+  .tecnico .texto { font-size: 9px; line-height: 1.25; color: #5b4a2a; text-align: center; }
+  .banco .vazio { color: rgba(255,255,255,.55); font-size: 12px; font-style: italic; padding: 0 6px; }
+
+  @keyframes balanco {
+    0%, 100% { transform: rotate(-1.5deg) translateY(0); }
+    50%      { transform: rotate(1.5deg)  translateY(-3px); }
+  }
+
+  /* área central de jogada */
+  .jogada {
+    flex: 1; min-height: 120px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; gap: 6px;
+  }
+  .aviso {
+    font: 900 18px/1.3 system-ui, sans-serif;
+    text-shadow: 2px 2px 0 rgba(0,0,0,.45);
+    min-height: 24px; margin: 0;
+  }
+  .dica { font-size: 12px; color: rgba(255,255,255,.6); }
+
+  /* mão */
+  .mao {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 6px;
+    padding: 18px 6px 16px;
+  }
+  .carta {
+    width: 96px;
+    background: #fbfbf7; color: #1d1d1d;
+    border: 0; border-radius: 9px;
+    padding: 5px; font-family: inherit; text-align: left;
+    cursor: pointer; display: flex; flex-direction: column;
+    box-shadow: 0 0 0 2px #d9d9d0 inset, 0 5px 0 rgba(0,0,0,.35);
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .carta:hover:not(:disabled) { transform: translateY(-6px) rotate(-1deg); }
+  .carta:focus-visible { outline: 3px solid var(--ouro); outline-offset: 2px; }
+  .carta.escolhida {
+    transform: translateY(-18px);
+    box-shadow: 0 0 0 3px var(--ouro) inset, 0 10px 0 rgba(0,0,0,.35);
+  }
+  .carta.marcada { box-shadow: 0 0 0 3px var(--vermelho) inset, 0 10px 0 rgba(0,0,0,.35); }
+
+  .carta .topo {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 3px;
+  }
+  .carta .ovr { font: 900 20px/1 Georgia, serif; }
+  .carta .pos {
+    font: 800 9px/1 system-ui, sans-serif; letter-spacing: 1px;
+    color: #fff; padding: 3px 5px; border-radius: 4px;
+  }
+  .carta[data-pos="GOL"] .ovr { color: var(--gol); } .carta[data-pos="GOL"] .pos { background: var(--gol); }
+  .carta[data-pos="DEF"] .ovr { color: var(--def); } .carta[data-pos="DEF"] .pos { background: var(--def); }
+  .carta[data-pos="MEI"] .ovr { color: var(--mei); } .carta[data-pos="MEI"] .pos { background: var(--mei); }
+  .carta[data-pos="ATA"] .ovr { color: var(--ata); } .carta[data-pos="ATA"] .pos { background: var(--ata); }
+
+  .carta .foto {
+    display: block; border-radius: 6px; overflow: hidden;
+    background: #e7ebe4; margin-bottom: 4px;
+  }
+  .carta[data-pos="GOL"] .foto { background: #f3e6c9; }
+  .carta[data-pos="DEF"] .foto { background: #d8e4f7; }
+  .carta[data-pos="MEI"] .foto { background: #d6efe1; }
+  .carta[data-pos="ATA"] .foto { background: #f6d8db; }
+  .carta .foto svg { display: block; width: 100%; height: auto; }
+  .carta .foto img.retratoFoto {
+    display: block; width: 100%; aspect-ratio: 48 / 44;
+    object-fit: cover; object-position: center top;
+  }
+  .carta .jogador { font-size: 11px; font-weight: 800; line-height: 1.15; flex: 1; }
+  .carta .clube { font-size: 8px; color: #6b6b62; text-transform: uppercase; margin-top: 2px; letter-spacing: .5px; }
+  .carta .apito { font-size: 9px; color: var(--vermelho); font-weight: 900; }
+
+  /* botões grossos */
+  .acoes { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+  button.acao {
+    font: 900 15px/1 system-ui, sans-serif;
+    padding: 14px 26px; border-radius: 10px; border: 0;
+    color: #fff; cursor: pointer;
+    background: var(--painel);
+    box-shadow: 0 5px 0 rgba(0,0,0,.4);
+    transition: transform .08s ease, box-shadow .08s ease;
+  }
+  button.acao:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 1px 0 rgba(0,0,0,.4); }
+  button.acao.azul     { background: var(--azul); }
+  button.acao.vermelho { background: var(--vermelho); }
+  button.acao.laranja  { background: var(--laranja); }
+  button.acao:disabled { opacity: .4; cursor: not-allowed; }
+  button.acao:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+
+  /* loja e fim */
+  .painel {
+    background: var(--painel); border-radius: 12px; padding: 16px;
+    box-shadow: inset 0 0 0 3px var(--painel-escuro), 0 6px 0 rgba(0,0,0,.3);
+  }
+  .painel h2 { font: 900 20px/1.2 system-ui, sans-serif; margin: 0 0 4px; }
+  .painel .nota { color: var(--texto-fraco); font-size: 12px; margin: 0 0 14px; }
+  .prateleira { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; justify-content: center; }
+  .oferta {
+    width: 150px; text-align: center;
+    background: linear-gradient(160deg, #fff7e0, #f3e2b4); color: #2a2112;
+    border: 3px solid var(--ouro); border-radius: 10px; padding: 10px;
+    font-family: inherit; cursor: pointer;
+    box-shadow: 0 5px 0 rgba(0,0,0,.35);
+    transition: transform .12s ease;
+  }
+  .oferta.melhoria { background: linear-gradient(160deg, #e6f3ff, #bcdcf7); border-color: var(--azul); }
+  .oferta:hover:not(:disabled) { transform: translateY(-4px); }
+  .oferta:disabled { opacity: .45; cursor: not-allowed; }
+  .oferta .icone { font-size: 30px; }
+  .oferta .nome { font: 800 13px/1.2 system-ui, sans-serif; }
+  .oferta .texto { font-size: 11px; color: #5b4a2a; line-height: 1.35; margin: 4px 0 8px; }
+  .oferta .preco {
+    display: inline-block; background: var(--ouro); color: #fff;
+    font: 900 13px/1 system-ui, sans-serif; padding: 5px 10px; border-radius: 6px;
+    text-shadow: 1px 1px 0 rgba(0,0,0,.3);
+  }
+  .fim { text-align: center; }
+  .fim h2 { font-size: 28px; color: var(--vermelho); text-shadow: 2px 2px 0 #000; }
+
+  details.tabela { margin: 14px auto 0; max-width: 1100px; background: rgba(0,0,0,.25); border-radius: 10px; padding: 8px 12px; }
+  details.tabela summary { cursor: pointer; font-size: 12px; font-weight: 700; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid rgba(255,255,255,.12); }
+  th { color: var(--texto-fraco); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 800; }
+  td.azul { color: var(--azul); } td.vermelho { color: var(--vermelho); }
+
+  /* ---------- novidades: clareza e animação ---------- */
+  .carta { position: relative; }
+  .carta:disabled { cursor: default; }
+  .carta.semPonto { opacity: .45; }
+  .carta.escolhida.semPonto { opacity: .65; }
+  .carta.pontuando { transform: translateY(-10px) scale(1.06); }
+
+  .botoesMini { display: flex; gap: 6px; }
+  .botoesMini button, .ordenar button {
+    flex: 1; font: 800 11px/1 system-ui, sans-serif; padding: 8px 10px;
+    border: 0; border-radius: 8px; color: #fff; cursor: pointer;
+    box-shadow: 0 3px 0 rgba(0,0,0,.4);
+  }
+  .bt-azul { background: var(--azul); }
+  .bt-laranja { background: var(--laranja); }
+
+  .ordenar {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    font-size: 10px; font-weight: 800; color: rgba(255,255,255,.75);
+    background: rgba(0,0,0,.2); border-radius: 10px; padding: 6px 8px;
+  }
+  .ordenar div { display: flex; gap: 6px; }
+  .ordenar button { background: var(--painel); }
+  .ordenar button.ativo { background: var(--laranja); }
+
+  .jogadaCartas { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .jogadaCartas .carta { animation: entra .25s ease both; }
+  .jogadaCartas .carta:nth-child(2) { animation-delay: .05s; }
+  .jogadaCartas .carta:nth-child(3) { animation-delay: .1s; }
+  .jogadaCartas .carta:nth-child(4) { animation-delay: .15s; }
+  .jogadaCartas .carta:nth-child(5) { animation-delay: .2s; }
+  @keyframes entra { from { transform: translateY(80px); opacity: 0; } }
+
+  .bolha {
+    position: absolute; top: -16px; left: 50%;
+    font: 900 16px/1 system-ui, sans-serif; color: #fff;
+    padding: 4px 8px; border-radius: 6px; white-space: nowrap; pointer-events: none;
+    box-shadow: 0 3px 0 rgba(0,0,0,.35);
+    animation: sobe .35s ease both;
+  }
+  .bolha.azul { background: var(--azul); }
+  .bolha.vermelho { background: var(--vermelho); }
+  @keyframes sobe {
+    from { transform: translate(-50%, 10px) scale(.5); opacity: 0; }
+    to   { transform: translate(-50%, 0) scale(1); opacity: 1; }
+  }
+
+  .pulso { animation: pulso .3s ease; }
+  @keyframes pulso { 50% { transform: scale(1.18); } }
+  .tecnico.ativo { animation: pulso .4s ease; box-shadow: 0 0 0 3px #fff, 0 5px 0 rgba(0,0,0,.35); }
+
+  .dica { max-width: 460px; }
+  .dica b { color: #fff; }
+
+  /* escolha do adversário */
+  .selecao { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; align-items: flex-start; padding-top: 10px; }
+  .blindCarta {
+    width: 200px; background: var(--painel); border-radius: 12px; padding: 10px;
+    text-align: center; display: flex; flex-direction: column; gap: 6px; align-items: center;
+    box-shadow: inset 0 0 0 3px var(--painel-escuro), 0 6px 0 rgba(0,0,0,.3);
+    opacity: .55;
+  }
+  .blindCarta.atual { opacity: 1; transform: translateY(-8px); outline: 3px solid var(--laranja); }
+  .blindCarta.classico.atual { outline-color: var(--vermelho); }
+  .blindCarta .titulo {
+    width: 100%; background: var(--laranja); border-radius: 8px; padding: 6px;
+    font: 800 13px/1.2 system-ui, sans-serif;
+  }
+  .blindCarta.classico .titulo, .blindCarta.classico .ficha { background: var(--vermelho); }
+  .blindCarta .rotulo { font-size: 11px; color: var(--texto-fraco); }
+  .blindCarta .metaNum { font: 900 22px/1 system-ui, sans-serif; color: var(--vermelho); }
+  .blindCarta .regraTxt { font-size: 11px; color: #ffd0cc; }
+  .blindCarta .status { font: 800 12px/1 system-ui, sans-serif; color: var(--texto-fraco); padding: 12px 0; }
+
+  /* prêmio */
+  .premio { max-width: 440px; margin: 0 auto; width: 100%; }
+  .premioLinha {
+    display: flex; justify-content: space-between; gap: 10px;
+    padding: 8px 0; border-bottom: 1px dashed rgba(255,255,255,.18); font-size: 13px;
+  }
+  .premioLinha b { color: var(--ouro); }
+
+  /* janelas */
+  .modal {
+    position: fixed; inset: 0; z-index: 10;
+    background: rgba(0,0,0,.6); display: grid; place-items: center; padding: 16px;
+  }
+  .modal[hidden] { display: none; }
+  .modal .painel { max-width: 540px; width: 100%; max-height: 90vh; overflow: auto; }
+  .passos { padding-left: 20px; margin: 8px 0 12px; }
+  .passos li { margin-bottom: 9px; font-size: 13px; }
+
+  /* celular: painel vira faixa no topo */
+  @media (max-width: 760px) {
+    .mesa { grid-template-columns: 1fr; }
+    .lateral { order: 0; }
+    .carta { width: 78px; }
+    .carta .jogador { font-size: 10px; }
+    .tecnico { width: 80px; }
+  }
+</style>
+</head>
+<body>
+<div class="mesa">
+
+  <!-- ============ PAINEL LATERAL ============ -->
+  <aside class="lateral">
+    <div class="logo">PELADA<br>ROYALE</div>
+    <div class="recorde" id="vRecorde"></div>
+    <div class="botoesMini">
+      <button class="bt-azul" id="btAjuda">Como jogar</button>
+      <button class="bt-laranja" id="btCombos">Combinações</button>
+    </div>
+
+    <div class="blind" id="vBlind">
+      <div class="titulo" id="vAdversario">—</div>
+      <div class="corpo">
+        <div class="ficha" id="vFicha">JOGO<br>1</div>
+        <div class="meta">
+          <div class="rotulo">Pontue ao menos</div>
+          <div class="valor" id="vMeta">—</div>
+          <div class="premio">para ganhar <b id="vPremio">$$$</b></div>
+        </div>
+      </div>
+      <div class="regra" id="vRegra"></div>
+    </div>
+
+    <div class="linha">
+      <div class="rotulo">Pontos da rodada</div>
+      <div class="valor" id="vPontos">0</div>
+    </div>
+    <div class="barra"><div id="vBarra"></div></div>
+
+    <div class="maoInfo">
+      <div class="combinacao" id="vCombinacao">Selecione até 5</div>
+      <div class="chipsMult">
+        <div class="num chips" id="vJogo">0</div>
+        <div class="vezes">×</div>
+        <div class="num mult" id="vMoral">0</div>
+      </div>
+      <div class="conta" id="vConta"></div>
+    </div>
+
+    <div class="grade">
+      <div class="mini"><div class="rotulo">Escalações</div><div class="valor azul" id="vEscalacoes">—</div></div>
+      <div class="mini"><div class="rotulo">Descartes</div><div class="valor vermelho" id="vDescartes">—</div></div>
+      <div class="mini largo"><div class="rotulo">Dinheiro</div><div class="valor ouro" id="vMoedas">$0</div></div>
+      <div class="mini"><div class="rotulo">Campeonato</div><div class="valor" id="vAnte">—</div></div>
+      <div class="mini"><div class="rotulo">Jogo</div><div class="valor" id="vRodada">—</div></div>
+    </div>
+  </aside>
+
+  <!-- ============ CAMPO ============ -->
+  <main class="campo">
+
+    <div class="zona">
+      <div class="banco" id="vBanco"></div>
+      <div class="contador" id="vContTecnicos">0/5</div>
+    </div>
+
+    <!-- escolha do adversário -->
+    <div id="painelSelecao" hidden>
+      <div class="selecao" id="vSelecao"></div>
+    </div>
+
+    <!-- prêmio -->
+    <div id="painelPremio" hidden class="painel premio">
+      <h2>Vitória!</h2>
+      <div id="vPremioDet"></div>
+      <div class="acoes" style="margin-top:14px">
+        <button class="acao laranja" id="btReceber">Receber</button>
+      </div>
+    </div>
+
+    <!-- loja -->
+    <div id="painelLoja" hidden class="painel">
+      <h2>Mercado da bola</h2>
+      <p class="nota" id="lojaNota"></p>
+      <div class="prateleira" id="vPrateleira"></div>
+      <p class="aviso" id="vAvisoLoja" style="font-size:14px"></p>
+      <div class="acoes">
+        <button class="acao laranja" id="btSeguir">Próximo campeonato</button>
+      </div>
+    </div>
+
+    <!-- fim -->
+    <div id="painelFim" hidden class="painel fim">
+      <h2 id="fimTitulo"></h2>
+      <p class="nota" id="fimTexto"></p>
+      <div class="acoes">
+        <button class="acao azul" id="btReiniciar">Jogar de novo</button>
+      </div>
+    </div>
+
+    <!-- jogo -->
+    <div id="painelJogo" style="display:flex;flex-direction:column;gap:12px;flex:1">
+      <div class="jogada">
+        <div class="jogadaCartas" id="vJogada"></div>
+        <p class="aviso" id="vAviso"></p>
+        <div class="dica" id="vDica"></div>
+      </div>
+
+      <div class="zona">
+        <div class="mao" id="vMao"></div>
+        <div class="contador" id="vContMonte">0/52</div>
+      </div>
+
+      <div class="acoes">
+        <button class="acao azul" id="btEscalar">Escalar</button>
+        <div class="ordenar">Ordenar mão
+          <div><button id="btOrdOvr">Overall</button><button id="btOrdPos">Posição</button></div>
+        </div>
+        <button class="acao vermelho" id="btDescartar">Descartar</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal" id="modalAjuda" hidden>
+  <div class="painel">
+    <h2>Como jogar</h2>
+    <ol class="passos">
+      <li><b>Objetivo:</b> em cada jogo, alcance a <b>meta de pontos</b> antes de acabarem as
+        <b style="color:var(--azul)">escalações</b>.</li>
+      <li><b>Escolha até 5 cartas</b> e aperte <b style="color:var(--azul)">Escalar</b>. Funciona como pôquer:
+        o <b>overall</b> é o valor da carta e a <b>posição</b> (GOL, DEF, MEI, ATA) é o naipe.</li>
+      <li><b>Pontos = <span style="color:var(--azul)">Jogo</span> × <span style="color:var(--vermelho)">Moral</span>.</b>
+        Jogo = base da combinação + overall das cartas que pontuam. Moral é o multiplicador.</li>
+      <li>Mão ruim? Selecione cartas e use <b style="color:var(--vermelho)">Descartar</b> para trocá-las.
+        Os descartes são limitados.</li>
+      <li>Cada campeonato tem 3 jogos. O 3º é o <b>clássico</b>, com uma regra especial que atrapalha.</li>
+      <li>Ganhar dá <b style="color:var(--ouro)">dinheiro</b> (escalações que sobram e dinheiro guardado rendem extra).
+        No fim do campeonato, gaste no <b>Mercado da bola</b> com <b>técnicos</b>, que dão bônus permanentes.</li>
+    </ol>
+    <p class="nota">Dica: procure pares e trincas de overall. Sequências e 5 da mesma posição valem muito mais.</p>
+    <div class="acoes"><button class="acao azul" data-fechar>Entendi!</button></div>
+  </div>
+</div>
+
+<div class="modal" id="modalCombos" hidden>
+  <div class="painel">
+    <h2>Combinações</h2>
+    <table>
+      <thead><tr><th>Combinação</th><th>Critério</th><th class="num">Jogo</th><th class="num">Moral</th></tr></thead>
+      <tbody id="vTabela"></tbody>
+    </table>
+    <p class="nota" style="margin-top:10px">Na carta alta só o melhor jogador pontua. Em pares, trincas e
+      quadras, só as cartas repetidas pontuam. Cartas que não pontuam ficam apagadas.</p>
+    <div class="acoes"><button class="acao azul" data-fechar>Fechar</button></div>
+  </div>
+</div>
+
+<script>
+/* ===========================================================================
+   1. BARALHO — 4 posições × 13 overalls.
+   FOTOS: acrescente  foto: fotoCommons("Nome Exato Do Arquivo.jpg")
+   (título do arquivo no commons.wikimedia.org, depois de "File:").
+   =========================================================================== */
+const fotoCommons = arquivo =>
+  "https://commons.wikimedia.org/wiki/Special:FilePath/" +
+  encodeURIComponent(arquivo) + "?width=200";
+
+const BARALHO = [
+  // ---- GOLEIROS ----
+  { nome: "Rossi",          pos: "GOL", ovr: 13, clube: "Flamengo" },
+  { nome: "Weverton",       pos: "GOL", ovr: 12, clube: "Palmeiras" },
+  { nome: "Hugo Souza",     pos: "GOL", ovr: 11, clube: "Corinthians" },
+  { nome: "Rafael",         pos: "GOL", ovr: 10, clube: "São Paulo" },
+  { nome: "Fábio",          pos: "GOL", ovr:  9, clube: "Fluminense" },
+  { nome: "John",           pos: "GOL", ovr:  8, clube: "Botafogo" },
+  { nome: "Léo Jardim",     pos: "GOL", ovr:  7, clube: "Vasco" },
+  { nome: "Marchesín",      pos: "GOL", ovr:  6, clube: "Grêmio" },
+  { nome: "Rochet",         pos: "GOL", ovr:  5, clube: "Internacional" },
+  { nome: "Cássio",         pos: "GOL", ovr:  4, clube: "Cruzeiro" },
+  { nome: "Everson",        pos: "GOL", ovr:  3, clube: "Atlético-MG" },
+  { nome: "Gabriel Brazão", pos: "GOL", ovr:  2, clube: "Santos" },
+  { nome: "Kaio Pantaleão", pos: "GOL", ovr:  1, clube: "Várzea FC" },
+
+  // ---- DEFENSORES ----
+  { nome: "Léo Ortiz",      pos: "DEF", ovr: 13, clube: "Flamengo" },
+  { nome: "Gustavo Gómez",  pos: "DEF", ovr: 12, clube: "Palmeiras" },
+  { nome: "Thiago Silva",   pos: "DEF", ovr: 11, clube: "Fluminense",
+    foto: fotoCommons("Thiago Silva - Brazil 2011.jpg") },
+  { nome: "Alexsandro",     pos: "DEF", ovr: 10, clube: "Corinthians" },
+  { nome: "Arboleda",       pos: "DEF", ovr:  9, clube: "São Paulo" },
+  { nome: "Barboza",        pos: "DEF", ovr:  8, clube: "Botafogo" },
+  { nome: "Léo Pereira",    pos: "DEF", ovr:  7, clube: "Flamengo" },
+  { nome: "Lucas Oliveira", pos: "DEF", ovr:  6, clube: "Vasco" },
+  { nome: "Kannemann",      pos: "DEF", ovr:  5, clube: "Grêmio" },
+  { nome: "Vitão",          pos: "DEF", ovr:  4, clube: "Internacional" },
+  { nome: "Villalba",       pos: "DEF", ovr:  3, clube: "Cruzeiro" },
+  { nome: "Junior Alonso",  pos: "DEF", ovr:  2, clube: "Atlético-MG" },
+  { nome: "Zé Ivaldo",      pos: "DEF", ovr:  1, clube: "Santos" },
+
+  // ---- MEIO-CAMPO ----
+  { nome: "De Arrascaeta",  pos: "MEI", ovr: 13, clube: "Flamengo",
+    foto: fotoCommons("Giorgian De Arrascaeta 20171114 AUT URU 4546 (cropped).jpg") },
+  { nome: "Raphael Veiga",  pos: "MEI", ovr: 12, clube: "Palmeiras" },
+  { nome: "Rodrigo De Paul",pos: "MEI", ovr: 11, clube: "Atlético-MG" },
+  { nome: "Rodrigo Garro",  pos: "MEI", ovr: 10, clube: "Corinthians" },
+  { nome: "Oscar",          pos: "MEI", ovr:  9, clube: "São Paulo" },
+  { nome: "Ganso",          pos: "MEI", ovr:  8, clube: "Fluminense" },
+  { nome: "Marlon Freitas", pos: "MEI", ovr:  7, clube: "Botafogo" },
+  { nome: "Coutinho",       pos: "MEI", ovr:  6, clube: "Vasco" },
+  { nome: "Cristaldo",      pos: "MEI", ovr:  5, clube: "Grêmio" },
+  { nome: "Alan Patrick",   pos: "MEI", ovr:  4, clube: "Internacional" },
+  { nome: "Matheus Pereira",pos: "MEI", ovr:  3, clube: "Cruzeiro" },
+  { nome: "Gerson",         pos: "MEI", ovr:  2, clube: "Flamengo" },
+  { nome: "Diegão",         pos: "MEI", ovr:  1, clube: "Várzea FC" },
+
+  // ---- ATACANTES ----
+  { nome: "Pedro",          pos: "ATA", ovr: 13, clube: "Flamengo" },
+  { nome: "Neymar",         pos: "ATA", ovr: 12, clube: "Santos",
+    foto: fotoCommons("Neymar Jr. with Al Hilal, 3 October 2023 - 03 (cropped).jpg") },
+  { nome: "Estêvão",        pos: "ATA", ovr: 11, clube: "Palmeiras" },
+  { nome: "Yuri Alberto",   pos: "ATA", ovr: 10, clube: "Corinthians" },
+  { nome: "Hulk",           pos: "ATA", ovr:  9, clube: "Atlético-MG",
+    foto: fotoCommons("Givanildo Vieira de Souza (Hulk).jpg") },
+  { nome: "Calleri",        pos: "ATA", ovr:  8, clube: "São Paulo" },
+  { nome: "Cano",           pos: "ATA", ovr:  7, clube: "Fluminense" },
+  { nome: "Igor Jesus",     pos: "ATA", ovr:  6, clube: "Botafogo" },
+  { nome: "Vegetti",        pos: "ATA", ovr:  5, clube: "Vasco" },
+  { nome: "Braithwaite",    pos: "ATA", ovr:  4, clube: "Grêmio" },
+  { nome: "Borré",          pos: "ATA", ovr:  3, clube: "Internacional" },
+  { nome: "Kaio Jorge",     pos: "ATA", ovr:  2, clube: "Cruzeiro" },
+  { nome: "Guilherme",      pos: "ATA", ovr:  1, clube: "Santos" },
+];
+
+const NOME_POSICAO = { GOL: "Goleiro", DEF: "Defesa", MEI: "Meio", ATA: "Ataque" };
+
+/* ===========================================================================
+   1b. RETRATOS EM SVG (fallback quando não há foto)
+   =========================================================================== */
+const UNIFORMES = {
+  "Flamengo":      { c1: "#c81d25", c2: "#141414", padrao: "horizontal" },
+  "Palmeiras":     { c1: "#0a6b3d", c2: "#ffffff", padrao: "solido"     },
+  "Corinthians":   { c1: "#eceff0", c2: "#141414", padrao: "solido"     },
+  "São Paulo":     { c1: "#eceff0", c2: "#c81d25", padrao: "horizontal" },
+  "Fluminense":    { c1: "#7a1535", c2: "#0a6b3d", padrao: "vertical"   },
+  "Botafogo":      { c1: "#141414", c2: "#eceff0", padrao: "vertical"   },
+  "Vasco":         { c1: "#eceff0", c2: "#141414", padrao: "diagonal"   },
+  "Grêmio":        { c1: "#1b5fa8", c2: "#141414", padrao: "vertical"   },
+  "Internacional": { c1: "#c81d25", c2: "#ffffff", padrao: "solido"     },
+  "Cruzeiro":      { c1: "#1b4ea8", c2: "#ffffff", padrao: "solido"     },
+  "Atlético-MG":   { c1: "#141414", c2: "#eceff0", padrao: "vertical"   },
+  "Santos":        { c1: "#eceff0", c2: "#1a1a1a", padrao: "solido"     },
+  "Várzea FC":     { c1: "#8a7f6a", c2: "#4a4336", padrao: "solido"     },
+};
+
+const TONS_PELE   = ["#f2d3b3", "#e3b48d", "#c98d5f", "#9a6239", "#6b4228", "#4a2d1c"];
+const TONS_CABELO = ["#241a12", "#0f0b08", "#55361f", "#8a6a38", "#141414", "#6b4a2a"];
+
+function semente(texto) {
+  let h = 2166136261;
+  for (let i = 0; i < texto.length; i++) {
+    h ^= texto.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function retrato(carta) {
+  if (carta.foto) {
+    return `<img class="retratoFoto" src="${carta.foto}" alt="Foto de ${carta.nome}"
+      loading="lazy" data-nome="${carta.nome}" onerror="semFoto(this)">`;
+  }
+  return retratoSVG(carta);
+}
+
+function semFoto(img) {
+  const carta = BARALHO.find(c => c.nome === img.dataset.nome);
+  if (carta) img.outerHTML = retratoSVG(carta);
+}
+
+function retratoSVG(carta) {
+  const s      = semente(carta.nome);
+  const pele   = TONS_PELE[s % TONS_PELE.length];
+  const cabelo = TONS_CABELO[(s >>> 4) % TONS_CABELO.length];
+  const estilo = (s >>> 8) % 5;
+  const barba  = ((s >>> 12) % 3) === 0;
+  const uni    = UNIFORMES[carta.clube] || UNIFORMES["Várzea FC"];
+  const id     = "u" + s.toString(36);
+  const camisa = "M4 44 Q5 31 17 27 L31 27 Q43 31 44 44 Z";
+
+  let listras = "";
+  if (uni.padrao === "vertical") {
+    listras = [10, 20, 30, 40].map(x =>
+      `<rect x="${x}" y="24" width="4" height="20" fill="${uni.c2}"/>`).join("");
+  } else if (uni.padrao === "horizontal") {
+    listras = [29, 36, 43].map(y =>
+      `<rect x="2" y="${y}" width="44" height="4" fill="${uni.c2}"/>`).join("");
+  } else if (uni.padrao === "diagonal") {
+    listras = `<path d="M2 44 L30 24 L38 24 L10 44 Z" fill="${uni.c2}"/>`;
+  }
+
+  const cortes = [
+    `<path d="M15 15 Q24 8 33 15 Q32 10 24 9.5 Q16 10 15 15 Z" fill="${cabelo}"/>`,
+    `<path d="M13.5 17 Q13 5.5 24 5.5 Q35 5.5 34.5 17 Q33 11 24 10.5 Q15 11 13.5 17 Z" fill="${cabelo}"/>`,
+    `<path d="M15.5 14 Q24 10 32.5 14 Q31.5 11 24 10.8 Q16.5 11 15.5 14 Z" fill="${cabelo}" opacity=".9"/>`,
+    `<g fill="${cabelo}"><circle cx="17" cy="13" r="4"/><circle cx="22" cy="10" r="4.4"/>` +
+      `<circle cx="27" cy="10.5" r="4.2"/><circle cx="31.5" cy="13.5" r="3.8"/></g>`,
+    `<path d="M20.5 12 Q24 4 27.5 12 Z" fill="${cabelo}"/>` +
+      `<path d="M15.5 14.5 Q24 11.5 32.5 14.5 Q31 12.5 24 12.3 Q17 12.5 15.5 14.5 Z" fill="${cabelo}" opacity=".55"/>`,
+  ];
+
+  return `<svg viewBox="0 0 48 44" role="img" aria-label="Retrato de ${carta.nome}">
+    <defs><clipPath id="${id}"><path d="${camisa}"/></clipPath></defs>
+    <g clip-path="url(#${id})"><path d="${camisa}" fill="${uni.c1}"/>${listras}</g>
+    <rect x="20.5" y="22" width="7" height="7" fill="${pele}"/>
+    <ellipse cx="15.2" cy="19.5" rx="1.9" ry="2.4" fill="${pele}"/>
+    <ellipse cx="32.8" cy="19.5" rx="1.9" ry="2.4" fill="${pele}"/>
+    <ellipse cx="24" cy="18" rx="9.2" ry="10.6" fill="${pele}"/>
+    ${barba ? `<path d="M15.2 19 Q16 29.5 24 29.5 Q32 29.5 32.8 19 Q30 25 24 25 Q18 25 15.2 19 Z"
+        fill="${cabelo}" opacity=".8"/>` : ""}
+    ${cortes[estilo]}
+    <ellipse cx="20.6" cy="18.6" rx="1.25" ry="1.5" fill="#1d1510"/>
+    <ellipse cx="27.4" cy="18.6" rx="1.25" ry="1.5" fill="#1d1510"/>
+    <path d="M21.2 23.4 Q24 25.4 26.8 23.4" stroke="#8a5340" stroke-width="1.1"
+      fill="none" stroke-linecap="round"/>
+  </svg>`;
+}
+
+/* ===========================================================================
+   2. COMBINAÇÕES
+   =========================================================================== */
+const COMBINACOES = [
+  { id: "alta",      nome: "Bola pra frente",   criterio: "Carta alta",                 jogo:   5, moral: 1 },
+  { id: "par",       nome: "Dupla de área",     criterio: "Um par",                     jogo:  12, moral: 2 },
+  { id: "doisPares", nome: "Tabelinha",         criterio: "Dois pares",                 jogo:  22, moral: 2 },
+  { id: "armado",    nome: "Time armado",       criterio: "As 4 posições em campo",     jogo:  25, moral: 3 },
+  { id: "trinca",    nome: "Triangulação",      criterio: "Trinca",                     jogo:  32, moral: 3 },
+  { id: "sequencia", nome: "Linha de passe",    criterio: "Sequência de 5",             jogo:  35, moral: 4 },
+  { id: "setor",     nome: "Setor fechado",     criterio: "5 da mesma posição",         jogo:  38, moral: 4 },
+  { id: "esquema",   nome: "Esquema 4-4-2",     criterio: "Trinca + par",               jogo:  45, moral: 4 },
+  { id: "quadra",    nome: "Jogada ensaiada",   criterio: "Quadra",                     jogo:  65, moral: 7 },
+  { id: "canarinho", nome: "Seleção canarinho", criterio: "Sequência na mesma posição", jogo: 110, moral: 8 },
+];
+const porId = id => COMBINACOES.find(c => c.id === id);
+
+/* ===========================================================================
+   3. TÉCNICOS (coringas) — ganharam um ícone para a carta
+   =========================================================================== */
+const TECNICOS = [
+  { id: "professor", nome: "O Professor", preco: 4, icone: "🎓",
+    texto: "+25 de jogo em qualquer escalação.",
+    aplicar: f => { f.jogo += 25; } },
+  { id: "coronel", nome: "O Coronel", preco: 6, icone: "🎖️",
+    texto: "+2 de moral em qualquer escalação.",
+    aplicar: f => { f.moral += 2; } },
+  { id: "raposa", nome: "Raposa Velha", preco: 5, icone: "🦊",
+    texto: "+3 de moral se escalar os 5.",
+    aplicar: f => { if (f.cartas.length === 5) f.moral += 3; } },
+  { id: "carrasco", nome: "Carrasco de Área", preco: 5, icone: "🎯",
+    texto: "+12 de jogo por atacante que pontua.",
+    aplicar: f => { f.jogo += 12 * f.pontuam.filter(c => c.pos === "ATA").length; } },
+  { id: "muralha", nome: "A Muralha", preco: 5, icone: "🧱",
+    texto: "+12 de jogo por defensor que pontua.",
+    aplicar: f => { f.jogo += 12 * f.pontuam.filter(c => c.pos === "DEF").length; } },
+  { id: "maestro", nome: "O Maestro", preco: 7, icone: "🎼",
+    texto: "+1 de moral por meia que pontua.",
+    aplicar: f => { f.moral += f.pontuam.filter(c => c.pos === "MEI").length; } },
+  { id: "paredao", nome: "Treinador de Goleiros", preco: 3, icone: "🧤",
+    texto: "+35 de jogo se houver goleiro escalado.",
+    aplicar: f => { if (f.cartas.some(c => c.pos === "GOL")) f.jogo += 35; } },
+  { id: "base", nome: "Patrono da Base", preco: 4, icone: "🌱",
+    texto: "+15 de jogo por overall 5 ou menos que pontua.",
+    aplicar: f => { f.jogo += 15 * f.pontuam.filter(c => c.ovr <= 5).length; } },
+  { id: "supersticioso", nome: "O Supersticioso", preco: 5, icone: "🍀",
+    texto: "Dobra a moral na Dupla de área.",
+    aplicar: f => { if (f.combinacao.id === "par") f.moral *= 2; } },
+  { id: "tabela", nome: "Mago da Tabela", preco: 6, icone: "🪄",
+    texto: "+3 de moral com as 4 posições em campo.",
+    aplicar: f => { if (new Set(f.cartas.map(c => c.pos)).size === 4) f.moral += 3; } },
+  { id: "cartola", nome: "O Cartola", preco: 4, icone: "🎩",
+    texto: "+$2 a cada jogo ganho.",
+    aplicar: () => {}, rendaExtra: 2 },
+  { id: "veterano", nome: "O Veterano", preco: 6, icone: "👴",
+    texto: "+20 de jogo por overall 11+ que pontua.",
+    aplicar: f => { f.jogo += 20 * f.pontuam.filter(c => c.ovr >= 11).length; } },
+];
+const MAXIMO_TECNICOS = 5;
+
+/* ===========================================================================
+   4. MELHORIAS
+   =========================================================================== */
+const MELHORIAS = [
+  { id: "maisEscalacao", nome: "Elenco mais fundo", preco: 7, icone: "📋",
+    texto: "+1 escalação por jogo, para sempre.",
+    aplicar: e => { e.bonusEscalacoes++; } },
+  { id: "maisDescarte", nome: "Banco reforçado", preco: 5, icone: "🔁",
+    texto: "+1 descarte por jogo, para sempre.",
+    aplicar: e => { e.bonusDescartes++; } },
+  { id: "maisMao", nome: "Olheiro contratado", preco: 6, icone: "🔭",
+    texto: "+1 carta na mão, para sempre.",
+    aplicar: e => { e.bonusMao++; } },
+];
+
+/* ===========================================================================
+   5. ADVERSÁRIOS
+   =========================================================================== */
+const RODADAS_DO_ANTE = [
+  { nome: "Grêmio Esportivo Portuário",  meta: 250, classico: false },
+  { nome: "Associação Atlética Serrana", meta: 420, classico: false },
+  { nome: "Clássico da cidade",          meta: 650, classico: true  },
+];
+const CRESCIMENTO_ANTE = 1.65;
+
+const REGRAS_CLASSICO = [
+  { nome: "Chuva",              efeito: "chuva",   texto: "Atacantes valem metade do overall." },
+  { nome: "Gramado ruim",       efeito: "gramado", texto: "Sequências não contam como combinação." },
+  { nome: "Juiz ladrão",        efeito: "juiz",    texto: "O melhor jogador escalado não pontua." },
+  { nome: "Torcida adversária", efeito: "torcida", texto: "A moral de cada combinação cai em 1." },
+];
+
+const ESCALACOES_BASE = 4;
+const DESCARTES_BASE  = 3;
+const MAO_BASE        = 8;
+const MAXIMO_EM_CAMPO = 5;
+const CHAVE_RECORDE = "peladaRoyale.recorde";
+
+/* ===========================================================================
+   6. MOTOR DE PONTUAÇÃO
+   =========================================================================== */
+function embaralhar(lista) {
+  const copia = lista.slice();
+  for (let i = copia.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copia[i], copia[j]] = [copia[j], copia[i]];
+  }
+  return copia;
+}
+
+function contar(valores) {
+  const mapa = {};
+  for (const v of valores) mapa[v] = (mapa[v] || 0) + 1;
+  return mapa;
+}
+
+function ehSequencia(overalls) {
+  if (overalls.length !== 5) return false;
+  const unicos = [...new Set(overalls)].sort((a, b) => a - b);
+  return unicos.length === 5 && unicos[4] - unicos[0] === 4;
+}
+
+function melhorCarta(cartas) {
+  return cartas.reduce((a, b) => (b.ovr > a.ovr ? b : a));
+}
+
+function avaliar(cartas) {
+  if (!cartas.length) return null;
+  const overalls = cartas.map(c => c.ovr);
+  const vezesOvr = contar(overalls);
+  const vezesPos = contar(cartas.map(c => c.pos));
+  const grupos = Object.entries(vezesOvr)
+    .map(([ovr, vezes]) => ({ ovr: Number(ovr), vezes }))
+    .sort((a, b) => b.vezes - a.vezes || b.ovr - a.ovr);
+
+  const maiorGrupo = grupos[0].vezes;
+  const quantPares = grupos.filter(g => g.vezes >= 2).length;
+  const mesmaPos   = cartas.length === 5 && Object.values(vezesPos).some(v => v === 5);
+  const sequencia  = ehSequencia(overalls);
+  const quatroPos  = Object.keys(vezesPos).length === 4;
+  const doGrupo = n => cartas.filter(c => vezesOvr[c.ovr] >= n);
+
+  if (sequencia && mesmaPos) return { combinacao: porId("canarinho"), pontuam: cartas };
+  if (maiorGrupo >= 4)       return { combinacao: porId("quadra"),    pontuam: doGrupo(4) };
+  if (maiorGrupo === 3 && quantPares >= 2)
+                             return { combinacao: porId("esquema"),   pontuam: doGrupo(2) };
+  if (mesmaPos)              return { combinacao: porId("setor"),     pontuam: cartas };
+  if (sequencia)             return { combinacao: porId("sequencia"), pontuam: cartas };
+  if (maiorGrupo === 3)      return { combinacao: porId("trinca"),    pontuam: doGrupo(3) };
+  if (quatroPos)             return { combinacao: porId("armado"),    pontuam: cartas };
+  if (quantPares >= 2)       return { combinacao: porId("doisPares"), pontuam: doGrupo(2) };
+  if (maiorGrupo === 2)      return { combinacao: porId("par"),       pontuam: doGrupo(2) };
+  return { combinacao: porId("alta"), pontuam: [melhorCarta(cartas)] };
+}
+
+function calcular(cartas, efeito, tecnicos) {
+  const base = avaliar(cartas);
+  if (!base) return null;
+  let { combinacao, pontuam } = base;
+  let roubada = null;
+
+  if (efeito === "gramado" && (combinacao.id === "sequencia" || combinacao.id === "canarinho")) {
+    combinacao = porId("alta");
+    pontuam = [melhorCarta(cartas)];
+  }
+  if (efeito === "juiz") {
+    roubada = melhorCarta(cartas);
+    pontuam = pontuam.filter(c => c !== roubada);
+  }
+  const valorDe = c => (efeito === "chuva" && c.pos === "ATA" ? Math.floor(c.ovr / 2) : c.ovr);
+  const somaOvr = pontuam.reduce((t, c) => t + valorDe(c), 0);
+  const moralBase = efeito === "torcida" ? Math.max(1, combinacao.moral - 1) : combinacao.moral;
+
+  const ficha = { jogo: combinacao.jogo + somaOvr, moral: moralBase, cartas, pontuam, combinacao };
+  for (const t of (tecnicos || [])) t.aplicar(ficha);
+  ficha.moral = Math.max(1, ficha.moral);
+  return { combinacao, pontuam, roubada, jogo: ficha.jogo, moral: ficha.moral, total: ficha.jogo * ficha.moral };
+}
+
+/* ===========================================================================
+   7. ESTADO
+   =========================================================================== */
+let estado = null;
+
+function novaPartida() {
+  estado = {
+    ante: 1, indiceRodada: 0,
+    monte: [], mao: [], escolhidas: new Set(),
+    pontos: 0, escalacoes: 0, descartes: 0,
+    moedas: 4, tecnicos: [],
+    bonusEscalacoes: 0, bonusDescartes: 0, bonusMao: 0,
+    regra: null, tela: "jogo", resultado: null,
+    prateleira: [], aviso: "",
+    ordem: "ovr", animando: false, premio: null,
+  };
+  iniciarRodada();
+  estado.tela = "selecao";
+}
+
+function metaAtual() {
+  const base = RODADAS_DO_ANTE[estado.indiceRodada].meta;
+  return Math.round(base * Math.pow(CRESCIMENTO_ANTE, estado.ante - 1));
+}
+function tamanhoMao() { return MAO_BASE + estado.bonusMao; }
+
+function iniciarRodada() {
+  const rodada = RODADAS_DO_ANTE[estado.indiceRodada];
+  estado.monte      = embaralhar(BARALHO);
+  estado.mao        = estado.monte.splice(0, tamanhoMao());
+  estado.escolhidas = new Set();
+  estado.pontos     = 0;
+  estado.escalacoes = ESCALACOES_BASE + estado.bonusEscalacoes;
+  estado.descartes  = DESCARTES_BASE  + estado.bonusDescartes;
+  estado.regra      = rodada.classico
+    ? REGRAS_CLASSICO[Math.floor(Math.random() * REGRAS_CLASSICO.length)]
+    : null;
+  ordenarMao();
+}
+
+function completarMao() {
+  while (estado.mao.length < tamanhoMao()) {
+    if (!estado.monte.length) {
+      const naMao = new Set(estado.mao);
+      estado.monte = embaralhar(BARALHO.filter(c => !naMao.has(c)));
+      if (!estado.monte.length) break;
+    }
+    estado.mao.push(estado.monte.shift());
+  }
+  ordenarMao();
+}
+
+/** Ordena a mão por overall ou por posição, mantendo as cartas selecionadas. */
+function ordenarMao() {
+  const sel = new Set(cartasEscolhidas());
+  const ordemPos = { GOL: 0, DEF: 1, MEI: 2, ATA: 3 };
+  estado.mao.sort(estado.ordem === "pos"
+    ? (a, b) => ordemPos[a.pos] - ordemPos[b.pos] || b.ovr - a.ovr
+    : (a, b) => b.ovr - a.ovr || ordemPos[a.pos] - ordemPos[b.pos]);
+  estado.escolhidas = new Set(estado.mao.map((c, i) => (sel.has(c) ? i : -1)).filter(i => i >= 0));
+}
+
+function trocarOrdem(ordem) {
+  if (estado.animando) return;
+  estado.ordem = ordem;
+  ordenarMao();
+  desenhar();
+}
+
+function efeitoAtual() { return estado.regra ? estado.regra.efeito : null; }
+
+function cartasEscolhidas() {
+  return [...estado.escolhidas].sort((a, b) => a - b).map(i => estado.mao[i]);
+}
+
+function rendaDaVitoria() {
+  const extra = estado.tecnicos.reduce((t, x) => t + (x.rendaExtra || 0), 0);
+  return 3 + estado.escalacoes + extra;
+}
+
+function alternarCarta(indice) {
+  if (estado.tela !== "jogo" || estado.animando) return;
+  if (estado.escolhidas.has(indice)) estado.escolhidas.delete(indice);
+  else if (estado.escolhidas.size < MAXIMO_EM_CAMPO) estado.escolhidas.add(indice);
+  else estado.aviso = "Só cinco em campo por vez.";
+  desenhar();
+}
+
+const espera = ms => new Promise(ok => setTimeout(ok, ms));
+const fmt = n => n.toLocaleString("pt-BR");
+
+function pulsar(el) {
+  el.classList.remove("pulso");
+  void el.offsetWidth;            // reinicia a animação
+  el.classList.add("pulso");
+}
+
+function bolha(el, texto, cor) {
+  const b = document.createElement("div");
+  b.className = "bolha " + cor;
+  b.textContent = texto;
+  el.appendChild(b);
+}
+
+/** Escala as cartas com animação: cada carta que pontua soma no Jogo, um por vez. */
+async function escalar() {
+  if (estado.animando) return;
+  const cartas = cartasEscolhidas();
+  if (!cartas.length) { estado.aviso = "Escolha ao menos um jogador."; return desenhar(); }
+
+  const efeito = efeitoAtual();
+  const r = calcular(cartas, efeito, estado.tecnicos);
+
+  estado.animando = true;
+  estado.escalacoes--;
+  const fora = new Set(cartas);
+  estado.mao = estado.mao.filter(c => !fora.has(c));
+  estado.escolhidas = new Set();
+  desenhar();
+
+  // começa só com a base da combinação
+  let jogo  = r.combinacao.jogo;
+  let moral = efeito === "torcida" ? Math.max(1, r.combinacao.moral - 1) : r.combinacao.moral;
+  tela.combinacao.textContent = r.combinacao.nome;
+  tela.jogo.textContent  = jogo;
+  tela.moral.textContent = moral;
+  tela.conta.textContent = "";
+  tela.dica.textContent  = "";
+  pulsar(tela.combinacao);
+
+  tela.jogada.innerHTML = "";
+  const els = cartas.map(c => {
+    const el = criarCarta(c);
+    el.disabled = true;
+    tela.jogada.appendChild(el);
+    return el;
+  });
+  await espera(500);
+
+  // carta por carta
+  for (let i = 0; i < cartas.length; i++) {
+    const c = cartas[i];
+    if (c === r.roubada) {
+      els[i].classList.add("marcada", "semPonto");
+      bolha(els[i], "Anulado!", "vermelho");
+      await espera(450);
+      continue;
+    }
+    if (!r.pontuam.includes(c)) { els[i].classList.add("semPonto"); continue; }
+    const valor = efeito === "chuva" && c.pos === "ATA" ? Math.floor(c.ovr / 2) : c.ovr;
+    jogo += valor;
+    tela.jogo.textContent = jogo;
+    pulsar(tela.jogo);
+    els[i].classList.add("pontuando");
+    bolha(els[i], "+" + valor, "azul");
+    await espera(430);
+  }
+
+  // técnicos
+  if (r.jogo !== jogo || r.moral !== moral) {
+    tela.banco.querySelectorAll(".tecnico").forEach(t => t.classList.add("ativo"));
+    if (r.jogo !== jogo) {
+      bolha(tela.jogo.parentElement, `+${r.jogo - jogo} técnicos`, "azul");
+      jogo = r.jogo; tela.jogo.textContent = jogo; pulsar(tela.jogo);
+      await espera(400);
+    }
+    if (r.moral !== moral) {
+      moral = r.moral; tela.moral.textContent = moral; pulsar(tela.moral);
+      await espera(400);
+    }
+  }
+
+  tela.conta.innerHTML = `= <b>${fmt(r.total)}</b> pontos`;
+  pulsar(tela.conta);
+  await espera(650);
+
+  estado.pontos += r.total;
+  tela.pontos.textContent = fmt(estado.pontos);
+  tela.barra.style.width = Math.min(100, (estado.pontos / metaAtual()) * 100) + "%";
+  pulsar(tela.pontos);
+  await espera(700);
+
+  tela.jogada.innerHTML = "";
+  completarMao();
+  estado.animando = false;
+  estado.aviso = `${r.combinacao.nome}: +${fmt(r.total)}`;
+
+  if (estado.pontos >= metaAtual()) ganhouJogo();
+  else if (estado.escalacoes <= 0) {
+    estado.tela = "fim";
+    estado.resultado = "eliminado";
+    guardarRecorde();
+  }
+  desenhar();
+}
+
+/** Monta o prêmio detalhado e abre a tela de recebimento. */
+function ganhouJogo() {
+  const base  = 3 + estado.indiceRodada;                    // $3, $4, $5 no clássico
+  const sobra = estado.escalacoes;                          // $1 por escalação que sobrou
+  const juros = Math.min(5, Math.floor(estado.moedas / 5)); // $1 a cada $5 guardados
+  const extra = estado.tecnicos.reduce((t, x) => t + (x.rendaExtra || 0), 0);
+  estado.premio = {
+    adversario: RODADAS_DO_ANTE[estado.indiceRodada].nome,
+    base, sobra, juros, extra, total: base + sobra + juros + extra,
+  };
+  estado.tela = "premio";
+}
+
+function receberPremio() {
+  estado.moedas += estado.premio.total;
+  if (estado.indiceRodada < RODADAS_DO_ANTE.length - 1) {
+    estado.indiceRodada++;
+    iniciarRodada();
+    estado.tela = "selecao";
+  } else {
+    guardarRecorde();
+    estado.tela = "loja";
+    montarPrateleira();
+  }
+  desenhar();
+}
+
+function descartar() {
+  if (estado.animando) return;
+  if (!estado.escolhidas.size) { estado.aviso = "Escolha quem sai de campo."; return desenhar(); }
+  if (estado.descartes <= 0)   { estado.aviso = "Sem substituições restantes."; return desenhar(); }
+  const fora = new Set(cartasEscolhidas());
+  estado.mao = estado.mao.filter(c => !fora.has(c));
+  estado.escolhidas = new Set();
+  estado.descartes--;
+  completarMao();
+  estado.aviso = `${fora.size} substituição(ões)`;
+  desenhar();
+}
+
+/* ===========================================================================
+   8. LOJA
+   =========================================================================== */
+function montarPrateleira() {
+  const jaTenho = new Set(estado.tecnicos.map(t => t.id));
+  const livres = TECNICOS.filter(t => !jaTenho.has(t.id));
+  estado.prateleira = [
+    ...embaralhar(livres).slice(0, 2).map(t => ({ tipo: "tecnico", item: t })),
+    ...embaralhar(MELHORIAS).slice(0, 1).map(m => ({ tipo: "melhoria", item: m })),
+  ];
+}
+
+function comprar(indice) {
+  const oferta = estado.prateleira[indice];
+  if (!oferta || oferta.vendida) return;
+  if (estado.moedas < oferta.item.preco) { estado.aviso = "Dinheiro insuficiente."; return desenhar(); }
+  if (oferta.tipo === "tecnico" && estado.tecnicos.length >= MAXIMO_TECNICOS) {
+    estado.aviso = `Comissão técnica cheia (máx. ${MAXIMO_TECNICOS}).`;
+    return desenhar();
+  }
+  estado.moedas -= oferta.item.preco;
+  oferta.vendida = true;
+  if (oferta.tipo === "tecnico") estado.tecnicos.push(oferta.item);
+  else oferta.item.aplicar(estado);
+  estado.aviso = `${oferta.item.nome} contratado!`;
+  desenhar();
+}
+
+function proximoCampeonato() {
+  estado.ante++;
+  estado.indiceRodada = 0;
+  iniciarRodada();
+  estado.tela = "selecao";
+  desenhar();
+}
+
+/* ===========================================================================
+   9. RECORDE
+   =========================================================================== */
+function lerRecorde() {
+  try { return Number(localStorage.getItem(CHAVE_RECORDE)) || 0; } catch (e) { return 0; }
+}
+function guardarRecorde() {
+  try {
+    if (estado.ante > lerRecorde()) localStorage.setItem(CHAVE_RECORDE, String(estado.ante));
+  } catch (e) {}
+}
+
+/* ===========================================================================
+   10. DESENHO
+   =========================================================================== */
+const $ = id => document.getElementById(id);
+const tela = {
+  meta: $("vMeta"), pontos: $("vPontos"), escalacoes: $("vEscalacoes"),
+  descartes: $("vDescartes"), ante: $("vAnte"), rodada: $("vRodada"),
+  moedas: $("vMoedas"), recorde: $("vRecorde"), adversario: $("vAdversario"),
+  regra: $("vRegra"), blind: $("vBlind"), ficha: $("vFicha"), premio: $("vPremio"),
+  barra: $("vBarra"), banco: $("vBanco"), contTecnicos: $("vContTecnicos"),
+  combinacao: $("vCombinacao"), jogo: $("vJogo"), moral: $("vMoral"), conta: $("vConta"),
+  mao: $("vMao"), contMonte: $("vContMonte"), aviso: $("vAviso"),
+  painelJogo: $("painelJogo"), painelLoja: $("painelLoja"), painelFim: $("painelFim"),
+  prateleira: $("vPrateleira"), lojaNota: $("lojaNota"),
+  fimTitulo: $("fimTitulo"), fimTexto: $("fimTexto"),
+  btEscalar: $("btEscalar"), btDescartar: $("btDescartar"),
+  jogada: $("vJogada"), dica: $("vDica"), avisoLoja: $("vAvisoLoja"),
+  painelSelecao: $("painelSelecao"), selecao: $("vSelecao"),
+  painelPremio: $("painelPremio"), premioDet: $("vPremioDet"), btReceber: $("btReceber"),
+  btOrdOvr: $("btOrdOvr"), btOrdPos: $("btOrdPos"),
+};
+
+function desenhar() {
+  const rodada = RODADAS_DO_ANTE[estado.indiceRodada];
+  const meta   = metaAtual();
+
+  tela.meta.textContent       = meta.toLocaleString("pt-BR");
+  tela.pontos.textContent     = estado.pontos.toLocaleString("pt-BR");
+  tela.escalacoes.textContent = estado.escalacoes;
+  tela.descartes.textContent  = estado.descartes;
+  tela.ante.textContent       = estado.ante;
+  tela.rodada.textContent     = `${estado.indiceRodada + 1}/3`;
+  tela.moedas.textContent     = "$" + estado.moedas;
+  tela.adversario.textContent = rodada.nome;
+  tela.ficha.innerHTML        = rodada.classico ? "CLÁS<br>SICO" : `JOGO<br>${estado.indiceRodada + 1}`;
+  tela.premio.textContent     = "$".repeat(Math.min(6, 3 + estado.indiceRodada));
+  tela.blind.classList.toggle("classico", rodada.classico);
+  tela.regra.textContent = estado.regra ? `⚠ ${estado.regra.nome}: ${estado.regra.texto}` : "";
+  tela.barra.style.width = Math.min(100, (estado.pontos / meta) * 100) + "%";
+
+  const recorde = lerRecorde();
+  tela.recorde.textContent = recorde ? `Recorde: campeonato ${recorde}` : "";
+
+  desenharBanco();
+
+  tela.painelJogo.style.display = estado.tela === "jogo" ? "flex" : "none";
+  tela.painelSelecao.hidden = estado.tela !== "selecao";
+  tela.painelPremio.hidden  = estado.tela !== "premio";
+  tela.painelLoja.hidden    = estado.tela !== "loja";
+  tela.painelFim.hidden     = estado.tela !== "fim";
+
+  if (estado.tela === "loja")         desenharLoja();
+  else if (estado.tela === "fim")     desenharFim(rodada, meta);
+  else if (estado.tela === "selecao") desenharSelecao();
+  else if (estado.tela === "premio")  desenharPremio();
+  else                                desenharJogo();
+
+  if (estado.tela !== "jogo") {
+    tela.combinacao.textContent = "—";
+    tela.jogo.textContent = "0";
+    tela.moral.textContent = "0";
+    tela.conta.textContent = "";
+  }
+
+  tela.aviso.textContent = estado.aviso;
+  tela.avisoLoja.textContent = estado.tela === "loja" ? estado.aviso : "";
+  estado.aviso = "";
+}
+
+function desenharBanco() {
+  tela.contTecnicos.textContent = `${estado.tecnicos.length}/${MAXIMO_TECNICOS}`;
+  if (!estado.tecnicos.length) {
+    tela.banco.innerHTML = `<span class="vazio">Sem comissão técnica — contrate no mercado da bola.</span>`;
+    return;
+  }
+  tela.banco.innerHTML = estado.tecnicos.map(t =>
+    `<div class="tecnico" title="${t.texto}"><div class="icone">${t.icone}</div>` +
+    `<div class="nome">${t.nome}</div><div class="texto">${t.texto}</div></div>`
+  ).join("");
+}
+
+/** Cria o botão de uma carta (usado na mão e na área de jogada). */
+function criarCarta(carta) {
+  const bt = document.createElement("button");
+  bt.className = "carta";
+  bt.dataset.pos = carta.pos;
+  bt.innerHTML =
+    `<div class="topo"><span class="ovr">${carta.ovr}</span><span class="pos">${carta.pos}</span></div>` +
+    `<div class="foto">${retrato(carta)}</div>` +
+    `<div class="jogador">${carta.nome}</div>` +
+    `<div class="clube">${carta.clube}</div>`;
+  bt.title = `${carta.nome} — ${NOME_POSICAO[carta.pos]} do ${carta.clube} (overall ${carta.ovr})`;
+  return bt;
+}
+
+function desenharJogo() {
+  const escolhidas = cartasEscolhidas();
+  let r = null;
+
+  if (escolhidas.length) {
+    r = calcular(escolhidas, efeitoAtual(), estado.tecnicos);
+    const quem = r.pontuam.map(c => c.nome).join(", ") || "ninguém";
+    tela.combinacao.textContent = r.combinacao.nome;
+    tela.jogo.textContent  = r.jogo;
+    tela.moral.textContent = r.moral;
+    tela.conta.innerHTML = `= <b>${fmt(r.total)}</b> pontos` +
+      `<br><span style="font-size:11px">Pontuam: ${quem}</span>` +
+      (r.roubada ? `<br><span style="color:var(--vermelho);font-size:11px">Juiz anula ${r.roubada.nome}</span>` : "");
+    const falta = metaAtual() - estado.pontos;
+    tela.dica.innerHTML = r.total >= falta
+      ? `<b>Essa jogada vence o jogo!</b>`
+      : `Faltam <b>${fmt(falta)}</b> pontos. Cartas apagadas não pontuam nesta combinação.`;
+  } else {
+    tela.combinacao.textContent = "Selecione até 5";
+    tela.jogo.textContent = "0";
+    tela.moral.textContent = "0";
+    tela.conta.textContent = "";
+    tela.dica.innerHTML = `Clique nas cartas para escolher até 5 jogadores. ` +
+      `<b>Escalar</b> marca pontos · <b>Descartar</b> troca as cartas.`;
+  }
+
+  tela.contMonte.textContent = `${estado.monte.length}/${BARALHO.length}`;
+
+  tela.mao.innerHTML = "";
+  estado.mao.forEach((carta, indice) => {
+    const escolhida = estado.escolhidas.has(indice);
+    const bt = criarCarta(carta);
+    if (escolhida) bt.classList.add("escolhida");
+    if (r && escolhida && !r.pontuam.includes(carta)) bt.classList.add("semPonto");
+    if (r && carta === r.roubada) {
+      bt.classList.add("marcada");
+      bt.insertAdjacentHTML("beforeend", `<div class="apito">ANULADO</div>`);
+    }
+    bt.setAttribute("aria-pressed", escolhida);
+    bt.disabled = estado.animando;
+    bt.addEventListener("click", () => alternarCarta(indice));
+    tela.mao.appendChild(bt);
+  });
+
+  tela.btEscalar.disabled   = estado.animando || escolhidas.length === 0;
+  tela.btDescartar.disabled = estado.animando || escolhidas.length === 0 || estado.descartes <= 0;
+  tela.btOrdOvr.classList.toggle("ativo", estado.ordem === "ovr");
+  tela.btOrdPos.classList.toggle("ativo", estado.ordem === "pos");
+}
+
+/** Tela de escolha: mostra os 3 jogos do campeonato e destaca o próximo. */
+function desenharSelecao() {
+  tela.selecao.innerHTML = RODADAS_DO_ANTE.map((r, i) => {
+    const meta    = Math.round(r.meta * Math.pow(CRESCIMENTO_ANTE, estado.ante - 1));
+    const atual   = i === estado.indiceRodada;
+    const vencido = i < estado.indiceRodada;
+    const regra   = r.classico
+      ? `<div class="regraTxt">${atual && estado.regra
+          ? `⚠ ${estado.regra.nome}: ${estado.regra.texto}`
+          : "Regra especial sorteada"}</div>`
+      : "";
+    return `<div class="blindCarta${atual ? " atual" : ""}${r.classico ? " classico" : ""}">
+      <div class="titulo">${r.nome}</div>
+      <div class="ficha">${r.classico ? "CLÁS<br>SICO" : "JOGO<br>" + (i + 1)}</div>
+      <div class="rotulo">Pontue ao menos</div>
+      <div class="metaNum">${fmt(meta)}</div>
+      <div class="rotulo">Prêmio: <b style="color:var(--ouro)">$${3 + i}+</b></div>
+      ${regra}
+      ${atual
+        ? `<button class="acao laranja" data-jogar>Jogar</button>`
+        : `<div class="status">${vencido ? "✓ Vencido" : "Em breve"}</div>`}
+    </div>`;
+  }).join("");
+  tela.selecao.querySelector("[data-jogar]").addEventListener("click", () => {
+    estado.tela = "jogo";
+    desenhar();
+  });
+}
+
+/** Tela de prêmio: detalha de onde veio cada moeda. */
+function desenharPremio() {
+  const p = estado.premio;
+  const linha = (texto, valor) => valor
+    ? `<div class="premioLinha"><span>${texto}</span><b>+$${valor}</b></div>` : "";
+  tela.premioDet.innerHTML =
+    linha(`Vitória sobre ${p.adversario}`, p.base) +
+    linha(`Escalações que sobraram (${p.sobra})`, p.sobra) +
+    linha(`Juros: $1 a cada $5 guardados (máx. $5)`, p.juros) +
+    linha(`O Cartola`, p.extra);
+  tela.btReceber.textContent = `Receber $${p.total}`;
+}
+
+function desenharLoja() {
+  tela.lojaNota.textContent =
+    `Campeonato ${estado.ante} vencido. Você tem $${estado.moedas} e ` +
+    `${estado.tecnicos.length}/${MAXIMO_TECNICOS} técnicos.`;
+  tela.prateleira.innerHTML = "";
+  estado.prateleira.forEach((oferta, indice) => {
+    const item = oferta.item;
+    const semVaga = oferta.tipo === "tecnico" && estado.tecnicos.length >= MAXIMO_TECNICOS;
+    const bt = document.createElement("button");
+    bt.className = "oferta" + (oferta.tipo === "melhoria" ? " melhoria" : "");
+    bt.disabled = oferta.vendida || estado.moedas < item.preco || semVaga;
+    bt.innerHTML =
+      `<div class="icone">${item.icone || "⭐"}</div>` +
+      `<div class="nome">${item.nome}</div>` +
+      `<div class="texto">${item.texto}</div>` +
+      `<div class="preco">${oferta.vendida ? "✓" : "$" + item.preco}</div>`;
+    bt.addEventListener("click", () => comprar(indice));
+    tela.prateleira.appendChild(bt);
+  });
+}
+
+function desenharFim(rodada, meta) {
+  tela.fimTitulo.textContent = "ELIMINADO";
+  tela.fimTexto.textContent =
+    `Faltaram ${meta - estado.pontos} pontos contra ${rodada.nome}, no campeonato ${estado.ante}.`;
+}
+
+function desenharTabela() {
+  $("vTabela").innerHTML = COMBINACOES.slice().reverse().map(c =>
+    `<tr><td><b>${c.nome}</b></td><td style="color:var(--texto-fraco)">${c.criterio}</td>` +
+    `<td class="num azul">${c.jogo}</td><td class="num vermelho">×${c.moral}</td></tr>`
+  ).join("");
+}
+
+/* ===========================================================================
+   11. INÍCIO
+   =========================================================================== */
+tela.btEscalar.addEventListener("click", escalar);
+tela.btDescartar.addEventListener("click", descartar);
+$("btSeguir").addEventListener("click", proximoCampeonato);
+$("btReiniciar").addEventListener("click", () => { novaPartida(); desenhar(); });
+tela.btReceber.addEventListener("click", receberPremio);
+tela.btOrdOvr.addEventListener("click", () => trocarOrdem("ovr"));
+tela.btOrdPos.addEventListener("click", () => trocarOrdem("pos"));
+
+// janelas de ajuda
+const abrir = id => { $(id).hidden = false; };
+$("btAjuda").addEventListener("click", () => abrir("modalAjuda"));
+$("btCombos").addEventListener("click", () => abrir("modalCombos"));
+document.querySelectorAll(".modal").forEach(m => {
+  m.addEventListener("click", e => {
+    if (e.target === m || e.target.hasAttribute("data-fechar")) m.hidden = true;
+  });
+});
+
+// mostra o tutorial na primeira vez
+try {
+  if (!localStorage.getItem("peladaRoyale.viuAjuda")) {
+    abrir("modalAjuda");
+    localStorage.setItem("peladaRoyale.viuAjuda", "1");
+  }
+} catch (e) { abrir("modalAjuda"); }
+
+desenharTabela();
+novaPartida();
+desenhar();
+</script>
+</body>
+</html>
