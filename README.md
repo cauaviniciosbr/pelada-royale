@@ -4,7 +4,7 @@ Um roguelike de baralho com tema de futebol brasileiro, inspirado no Balatro.
 Monte escalações em vez de mãos de pôquer, bata a meta de pontos e ganhe o
 campeonato.
 
-**Jogar agora:** https://SEU-USUARIO.github.io/pelada-royale/
+**Jogar agora:** https://cauaviniciosbr.github.io/pelada-royale/
 *(troque `SEU-USUARIO` depois de ativar o GitHub Pages)*
 
 ## Como jogar
